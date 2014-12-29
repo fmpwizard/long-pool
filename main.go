@@ -92,7 +92,7 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 		for _, msg := range messages {
 			if currentIndex < msg.index {
 				log.Println("sending message")
-				payload.Res = append(payload.Res, Response{"here we are " + msg.Value + " on " + msg.Stamp.Format("Jan 2, 2006 at 3:04pm (EST)"), msg.index, ""})
+				payload.Res = append(payload.Res, Response{"here we are " + msg.Value + " on " + msg.Stamp.Format("Jan 2, 2006 at 3:04pm (EST)"), ""})
 			} else {
 				log.Printf("not sending message %+v\n", msg)
 			}
@@ -105,11 +105,11 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 			payload.LastIndex = lastId
 			fmt.Fprint(rw, payload)
 		} else {
-			fmt.Fprint(rw, Responses{[]Response{Response{Value: "", index: lastId, Error: ""}}, lastId})
+			fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, lastId})
 		}
 	} else {
 		log.Printf("Didn't find comet message\n")
-		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", index: lastId, Error: ""}}, 0})
+		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, 0})
 	}
 
 }
@@ -144,7 +144,6 @@ type CometInfo struct {
 
 type Response struct {
 	Value string
-	index uint64
 	Error string
 }
 
