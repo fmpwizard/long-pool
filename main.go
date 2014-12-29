@@ -100,11 +100,15 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 		cometStore.Lock()
 		cometStore.m[cookie.Value] = comet{currentComet, lastId, time.Now()} //update timestamp on comet
 		cometStore.Unlock()
-		log.Printf("sending %+v\n", payload)
-		fmt.Fprint(rw, payload)
+		if len(payload.Res) > 0 {
+			log.Printf("sending %+v\n", payload)
+			fmt.Fprint(rw, payload)
+		} else {
+			fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Index: lastId, Error: ""}}})
+		}
 	} else {
 		log.Printf("Didn't find comet message\n")
-		fmt.Fprint(rw, Response{"", 0, ""})
+		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Index: 0, Error: ""}}})
 	}
 
 }
@@ -115,6 +119,16 @@ func addMessage(rw http.ResponseWriter, req *http.Request) {
 	messageStore.Lock()
 	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{1, "Hi 1", time.Now()})
 	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{2, "Hi 2", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{3, "Hi 3", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{4, "Hi 4", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{5, "Hi 5", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{6, "Hi 6", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{7, "Hi 7", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{8, "Hi 8", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{9, "Hi 9", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{10, "Hi 10", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{11, "Hi 11", time.Now()})
+	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{12, "Hi 12", time.Now()})
 	messageStore.Unlock()
 	fmt.Fprintf(rw, "Added a message")
 }
@@ -149,12 +163,8 @@ type Response struct {
 	Error string
 }
 
-func (r Response) Sstring() string {
-	b, err := json.Marshal(r)
-	if err != nil {
-		return ""
-	}
-	return string(b)
+type Responses struct {
+	Res []Response
 }
 
 func (r Responses) String() string {
@@ -163,8 +173,4 @@ func (r Responses) String() string {
 		return ""
 	}
 	return string(b)
-}
-
-type Responses struct {
-	Res []Response
 }
