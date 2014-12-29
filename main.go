@@ -16,14 +16,15 @@ import (
 //messageStore 's key is sessionId + cometId'
 var messageStore = struct {
 	sync.RWMutex
-	m map[string][]message
-}{m: make(map[string][]message)}
+	LastIndex uint64
+	m         map[sessionCometKey][]message
+}{m: make(map[sessionCometKey][]message)}
 
 //cometStore 's key is sessionId'
 var cometStore = struct {
 	sync.RWMutex
-	m map[string]comet
-}{m: make(map[string]comet)}
+	m map[session]comet
+}{m: make(map[session]comet)}
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -53,7 +54,7 @@ func home(rw http.ResponseWriter, req *http.Request) {
 	var index uint64
 	rw.Header().Add("Content-Type", "text/html; charset=UTF-8")
 	cometStore.RLock()
-	cometVal, found := cometStore.m[cookie.Value]
+	cometVal, found := cometStore.m[session(cookie.Value)]
 	cometStore.RUnlock()
 	if found {
 		cometId = cometVal.Value
@@ -62,7 +63,7 @@ func home(rw http.ResponseWriter, req *http.Request) {
 		rand.Seed(time.Now().UnixNano())
 		cometId = strconv.FormatFloat(rand.Float64(), 'f', 20, 64)
 		cometStore.Lock()
-		cometStore.m[cookie.Value] = comet{cometId, 0, time.Now()}
+		cometStore.m[session(cookie.Value)] = comet{cometId, 0, time.Now()}
 		cometStore.Unlock()
 	}
 
@@ -80,72 +81,56 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	cookie, _ := req.Cookie("gsessionid")
 	log.Printf("comet id %s\n", currentComet)
 	log.Printf("session id %s\n", cookie.Value)
+	var lastId uint64
 	messageStore.RLock()
-	messages, found := messageStore.m[cookie.Value+currentComet]
+	messages, found := messageStore.m[sessionCometKey(cookie.Value+currentComet)]
+	lastId = messageStore.LastIndex
 	messageStore.RUnlock()
 	if found {
-		var lastId uint64
+
 		var payload Responses
 		for _, msg := range messages {
-			if currentIndex < msg.Index {
+			if currentIndex < msg.index {
 				log.Println("sending message")
-				payload.Res = append(payload.Res, Response{"here we are " + msg.Value + " on " + msg.stamp.Format("Jan 2, 2006 at 3:04pm (EST)"), msg.Index, ""})
+				payload.Res = append(payload.Res, Response{"here we are " + msg.Value + " on " + msg.Stamp.Format("Jan 2, 2006 at 3:04pm (EST)"), msg.index, ""})
 			} else {
 				log.Printf("not sending message %+v\n", msg)
-				if lastId < msg.Index {
-					lastId = msg.Index
-				}
 			}
 		}
 		cometStore.Lock()
-		cometStore.m[cookie.Value] = comet{currentComet, lastId, time.Now()} //update timestamp on comet
+		cometStore.m[session(cookie.Value)] = comet{currentComet, lastId, time.Now()} //update timestamp on comet
 		cometStore.Unlock()
 		if len(payload.Res) > 0 {
 			log.Printf("sending %+v\n", payload)
+			payload.LastIndex = lastId
 			fmt.Fprint(rw, payload)
 		} else {
-			fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Index: lastId, Error: ""}}})
+			fmt.Fprint(rw, Responses{[]Response{Response{Value: "", index: lastId, Error: ""}}, lastId})
 		}
 	} else {
 		log.Printf("Didn't find comet message\n")
-		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Index: 0, Error: ""}}})
+		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", index: lastId, Error: ""}}, 0})
 	}
 
 }
 
 func addMessage(rw http.ResponseWriter, req *http.Request) {
+	data := req.FormValue("data")
 	currentComet := req.FormValue("cometid")
 	cookie, _ := req.Cookie("gsessionid")
 	messageStore.Lock()
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{1, "Hi 1", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{2, "Hi 2", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{3, "Hi 3", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{4, "Hi 4", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{5, "Hi 5", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{6, "Hi 6", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{7, "Hi 7", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{8, "Hi 8", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{9, "Hi 9", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{10, "Hi 10", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{11, "Hi 11", time.Now()})
-	messageStore.m[cookie.Value+currentComet] = append(messageStore.m[cookie.Value+currentComet], message{12, "Hi 12", time.Now()})
+	messageStore.LastIndex++
+	messageStore.m[sessionCometKey(cookie.Value+currentComet)] = append(messageStore.m[sessionCometKey(cookie.Value+currentComet)], message{messageStore.LastIndex, data, time.Now()})
 	messageStore.Unlock()
 	fmt.Fprintf(rw, "Added a message")
 }
 
 type message struct {
-	Index uint64
+	index uint64
 	Value string
-	stamp time.Time
+	Stamp time.Time
 }
 
-/*
-type ByIndex []message
-
-func (a ByIndex) Len() int           { return len(a) }
-func (a ByIndex) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByIndex) Less(i, j int) bool { return a[i].Index < a[j].Index }
-*/
 type comet struct {
 	Value     string
 	LastIndex uint64
@@ -159,18 +144,23 @@ type CometInfo struct {
 
 type Response struct {
 	Value string
-	Index uint64
+	index uint64
 	Error string
 }
 
 type Responses struct {
-	Res []Response
+	Res       []Response
+	LastIndex uint64
 }
 
 func (r Responses) String() string {
-	b, err := json.Marshal(r.Res)
+	b, err := json.Marshal(r)
 	if err != nil {
 		return ""
 	}
 	return string(b)
 }
+
+type sessionCometKey string
+
+type session string
