@@ -63,7 +63,7 @@ func home(rw http.ResponseWriter, req *http.Request) {
 		rand.Seed(time.Now().UnixNano())
 		cometId = strconv.FormatFloat(rand.Float64(), 'f', 20, 64)
 		cometStore.Lock()
-		cometStore.m[session(cookie.Value)] = comet{cometId, 0, time.Now()}
+		cometStore.m[session(cookie.Value)] = comet{cometId, time.Now()}
 		cometStore.Unlock()
 	}
 
@@ -98,7 +98,7 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 			}
 		}
 		cometStore.Lock()
-		cometStore.m[session(cookie.Value)] = comet{currentComet, lastId, time.Now()} //update timestamp on comet
+		cometStore.m[session(cookie.Value)] = comet{currentComet, time.Now()} //update timestamp on comet
 		cometStore.Unlock()
 		if len(payload.Res) > 0 {
 			log.Printf("sending %+v\n", payload)
@@ -132,9 +132,8 @@ type message struct {
 }
 
 type comet struct {
-	Value     string
-	LastIndex uint64
-	LastSeen  time.Time
+	Value    string
+	LastSeen time.Time
 }
 
 type CometInfo struct {
