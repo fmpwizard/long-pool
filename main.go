@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -26,11 +27,14 @@ var cometStore = struct {
 	m map[session]comet
 }{m: make(map[session]comet)}
 
+var noMessages = errors.New("No new messages")
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	http.HandleFunc("/index", home)
 	http.HandleFunc("/add", addMessage)
 	http.HandleFunc("/comet", handleComet)
+	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	log.Println("starting on :7070")
 	log.Fatalf("failed to start %s", http.ListenAndServe(":7070", nil))
 }
@@ -81,13 +85,25 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	cookie, _ := req.Cookie("gsessionid")
 	log.Printf("comet id %s\n", currentComet)
 	log.Printf("session id %s\n", cookie.Value)
+	cometStore.Lock()
+	cometStore.m[session(cookie.Value)] = comet{currentComet, time.Now()} //update timestamp on comet
+	cometStore.Unlock()
+
+	resp, err := getMessages(sessionCometKey(cookie.Value+currentComet), currentIndex)
+	if err != nil {
+		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
+	} else {
+		fmt.Fprint(rw, resp)
+	}
+}
+
+func getMessages(key sessionCometKey, currentIndex uint64) (Responses, error) {
 	var lastId uint64
 	messageStore.RLock()
-	messages, found := messageStore.m[sessionCometKey(cookie.Value+currentComet)]
+	messages, found := messageStore.m[key]
 	lastId = messageStore.LastIndex
 	messageStore.RUnlock()
 	if found {
-
 		var payload Responses
 		for _, msg := range messages {
 			if currentIndex < msg.index {
@@ -97,21 +113,18 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 				log.Printf("not sending message %+v\n", msg)
 			}
 		}
-		cometStore.Lock()
-		cometStore.m[session(cookie.Value)] = comet{currentComet, time.Now()} //update timestamp on comet
-		cometStore.Unlock()
 		if len(payload.Res) > 0 {
 			log.Printf("sending %+v\n", payload)
 			payload.LastIndex = lastId
-			fmt.Fprint(rw, payload)
+			return payload, nil
 		} else {
-			fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, lastId})
+			log.Printf("Didn't find *new* comet message\n")
+			return Responses{}, noMessages
 		}
 	} else {
 		log.Printf("Didn't find comet message\n")
-		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, 0})
+		return Responses{}, noMessages
 	}
-
 }
 
 func addMessage(rw http.ResponseWriter, req *http.Request) {
@@ -162,3 +175,7 @@ func (r Responses) String() string {
 type sessionCometKey string
 
 type session string
+
+//http://127.0.0.1:7070/index
+//http://127.0.0.1:7070/add?data=Diego+was+here+1&cometid=0.89506036657873655482
+//http://127.0.0.1:7070/comet?index=3&cometid=0.89506036657873655482
