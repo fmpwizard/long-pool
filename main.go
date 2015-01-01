@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -26,8 +25,6 @@ var cometStore = struct {
 	sync.RWMutex
 	m map[session]comet
 }{m: make(map[session]comet)}
-
-var noMessages = errors.New("No new messages")
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -71,6 +68,14 @@ func home(rw http.ResponseWriter, req *http.Request) {
 		cometStore.Unlock()
 	}
 
+	messageStore.RLock()
+	_, found = messageStore.m[sessionCometKey(cookie.Value+cometId)]
+	lastId := messageStore.LastIndex
+	messageStore.RUnlock()
+	if found {
+		index = lastId
+	}
+
 	err = t.ExecuteTemplate(rw, "index.html", CometInfo{cometId, index})
 	if err != nil {
 		log.Fatalf("got error: %s", err)
@@ -83,21 +88,30 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	currentComet := req.FormValue("cometid")
 	currentIndex, _ := strconv.ParseUint(req.FormValue("index"), 10, 64)
 	cookie, _ := req.Cookie("gsessionid")
-	log.Printf("comet id %s\n", currentComet)
-	log.Printf("session id %s\n", cookie.Value)
 	cometStore.Lock()
 	cometStore.m[session(cookie.Value)] = comet{currentComet, time.Now()} //update timestamp on comet
 	cometStore.Unlock()
+	var chanMessages = make(chan Responses)
+	var done = make(chan bool)
+	tick := time.NewTicker(500 * time.Millisecond)
+	key := sessionCometKey(cookie.Value + currentComet)
+	go func() {
+		for _ = range tick.C {
+			getMessages(key, currentIndex, chanMessages, done)
+			log.Printf("started ticking %v\n", currentIndex)
+			<-done
+		}
+	}()
 
-	resp, err := getMessages(sessionCometKey(cookie.Value+currentComet), currentIndex)
-	if err != nil {
+	select {
+	case messages := <-chanMessages:
+		fmt.Fprint(rw, messages)
+	case <-time.After(time.Second * 5):
 		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
-	} else {
-		fmt.Fprint(rw, resp)
 	}
 }
 
-func getMessages(key sessionCometKey, currentIndex uint64) (Responses, error) {
+func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses, done chan bool) {
 	var lastId uint64
 	messageStore.RLock()
 	messages, found := messageStore.m[key]
@@ -107,23 +121,16 @@ func getMessages(key sessionCometKey, currentIndex uint64) (Responses, error) {
 		var payload Responses
 		for _, msg := range messages {
 			if currentIndex < msg.index {
-				log.Println("sending message")
 				payload.Res = append(payload.Res, Response{"here we are " + msg.Value + " on " + msg.Stamp.Format("Jan 2, 2006 at 3:04pm (EST)"), ""})
 			} else {
 				log.Printf("not sending message %+v\n", msg)
 			}
 		}
 		if len(payload.Res) > 0 {
-			log.Printf("sending %+v\n", payload)
 			payload.LastIndex = lastId
-			return payload, nil
-		} else {
-			log.Printf("Didn't find *new* comet message\n")
-			return Responses{}, noMessages
+			result <- payload
+			done <- true
 		}
-	} else {
-		log.Printf("Didn't find comet message\n")
-		return Responses{}, noMessages
 	}
 }
 

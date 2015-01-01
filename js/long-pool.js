@@ -4,31 +4,36 @@
 	window.init = (function() {
 		var self = this;
     	// "private" vars
+	    var doCallback = function(resp) {
+	    	if (resp.Res){
+		    	$.each(resp.Res, function(_, item){
+		  			if (item.Value){
+		  				console.log(item.Value);	
+		  			}
+		  		});	
+	    	}
+	  		
+		};
 	    var ajaxSuccess = function(resp) {
-	  		console.log("resp was " , resp);
+	  		doCallback(resp);
 		};
 	    var ajaxError = function(resp) {
 	  		console.log("Error: resp was " , resp);
 		};
-	    console.log("cometId " + cometId);
-	    console.log("index " + index);
-	    
+	    console.log("cometId " + cometId);	    
 	    var makeAjax = function(_index, _cometId){
 	    	$.ajax({
 		  		url: "/comet?index="+_index+"&cometid="+_cometId,
 		  		context: document.body,
-		  		timeout: 2000,
+		  		timeout: 6000,
 		  		dataType: 'json',
 		  		success: ajaxSuccess,
 		  		error: ajaxError
-			}).done(function() {
-		  		console.log("Done");
-				//makeAjax(resp.LastIndex,cometId);
+			}).done(function(resp) {
+				makeAjax(resp.LastIndex,cometId);
 			});
 		};
 		makeAjax(index,cometId);
-		makeAjax(1,cometId);
-
 	})();
 })(this);
 
