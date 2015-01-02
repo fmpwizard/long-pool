@@ -8,7 +8,7 @@
 	    	if (resp.Res){
 		    	$.each(resp.Res, function(_, item){
 		  			if (item.Value){
-		  				console.log(item.Value);	
+		  				$('body').html(item.Value);
 		  			}
 		  		});	
 	    	}

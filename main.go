@@ -99,14 +99,11 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	tick := time.NewTicker(500 * 2 * time.Millisecond)
 	key := sessionCometKey(cookie.Value + currentComet)
 	go func() {
-		log.Println("3")
 		for {
 			select {
 			case <-tick.C:
-				log.Printf("started ticking %v\n", currentIndex)
 				getMessages(key, currentIndex, chanMessages, done)
 			case <-done:
-				log.Println("4")
 				return
 			}
 		}
@@ -115,12 +112,10 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	select {
 	case messages := <-chanMessages:
 		tick.Stop()
-		log.Println("1")
 		done <- true
 		fmt.Fprint(rw, messages)
 	case <-time.After(time.Second * 5):
 		tick.Stop()
-		log.Println("2")
 		done <- true
 		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
 	}
@@ -156,7 +151,6 @@ func addMessage(rw http.ResponseWriter, req *http.Request) {
 	messageStore.LastIndex++
 	messageStore.m[sessionCometKey(cookie.Value+currentComet)] = append(messageStore.m[sessionCometKey(cookie.Value+currentComet)], message{messageStore.LastIndex, data, time.Now()})
 	messageStore.Unlock()
-	log.Printf("NumGoroutine %v\n", runtime.NumGoroutine())
 	fmt.Fprintf(rw, "Added a message")
 }
 
