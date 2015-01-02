@@ -86,6 +86,7 @@ func home(rw http.ResponseWriter, req *http.Request) {
 }
 
 func handleComet(rw http.ResponseWriter, req *http.Request) {
+	log.Printf("\n\nNumGoroutine %v\n", runtime.NumGoroutine())
 	rw.Header().Set("Content-Type", "application/json")
 	currentComet := req.FormValue("cometid")
 	currentIndex, _ := strconv.ParseUint(req.FormValue("index"), 10, 64)
@@ -94,34 +95,42 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	cometStore.m[session(cookie.Value)] = comet{currentComet, time.Now()} //update timestamp on comet
 	cometStore.Unlock()
 	var chanMessages = make(chan Responses)
-	tick := time.NewTicker(500 * time.Millisecond)
+	var done = make(chan bool)
+	tick := time.NewTicker(500 * 2 * time.Millisecond)
 	key := sessionCometKey(cookie.Value + currentComet)
 	go func() {
-		for _ = range tick.C {
-			getMessages(key, currentIndex, chanMessages)
-			log.Printf("started ticking %v\n", currentIndex)
+		log.Println("3")
+		for {
+			select {
+			case <-tick.C:
+				log.Printf("started ticking %v\n", currentIndex)
+				getMessages(key, currentIndex, chanMessages, done)
+			case <-done:
+				log.Println("4")
+				return
+			}
 		}
-		return
 	}()
 
 	select {
 	case messages := <-chanMessages:
 		tick.Stop()
+		log.Println("1")
+		done <- true
 		fmt.Fprint(rw, messages)
-		return
 	case <-time.After(time.Second * 5):
 		tick.Stop()
+		log.Println("2")
+		done <- true
 		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
-		return
 	}
 
 }
 
-func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses) {
-	var lastId uint64
+func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses, done chan bool) {
 	messageStore.RLock()
 	messages, found := messageStore.m[key]
-	lastId = messageStore.LastIndex
+	lastId := messageStore.LastIndex
 	messageStore.RUnlock()
 	if found {
 		var payload Responses

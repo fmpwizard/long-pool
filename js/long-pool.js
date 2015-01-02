@@ -17,8 +17,8 @@
 	    var ajaxSuccess = function(resp) {
 	  		doCallback(resp);
 		};
-	    var ajaxError = function(resp) {
-	  		console.log("Error: resp was " , resp);
+	    var ajaxError = function() {
+	  		makeAjax(0, cometId);
 		};
 	    console.log("cometId " + cometId);	    
 	    var makeAjax = function(_index, _cometId){
