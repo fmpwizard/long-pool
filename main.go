@@ -111,15 +111,12 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 
 	select {
 	case messages := <-chanMessages:
-		tick.Stop()
 		done <- true
 		fmt.Fprint(rw, messages)
 	case <-time.After(time.Second * 5):
-		tick.Stop()
 		done <- true
 		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
 	}
-
 }
 
 func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses, done chan bool) {
