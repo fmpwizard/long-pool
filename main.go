@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	_ "expvar"
 	"fmt"
 	"html/template"
 	"log"
@@ -33,6 +34,7 @@ func main() {
 	http.HandleFunc("/comet", handleComet)
 	http.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	log.Println("starting on :7070")
+	go gc()
 	log.Fatalf("failed to start %s", http.ListenAndServe(":7070", nil))
 }
 
@@ -92,26 +94,30 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	cometStore.m[session(cookie.Value)] = comet{currentComet, time.Now()} //update timestamp on comet
 	cometStore.Unlock()
 	var chanMessages = make(chan Responses)
-	var done = make(chan bool)
 	tick := time.NewTicker(500 * time.Millisecond)
 	key := sessionCometKey(cookie.Value + currentComet)
 	go func() {
 		for _ = range tick.C {
-			getMessages(key, currentIndex, chanMessages, done)
+			getMessages(key, currentIndex, chanMessages)
 			log.Printf("started ticking %v\n", currentIndex)
-			<-done
 		}
+		return
 	}()
 
 	select {
 	case messages := <-chanMessages:
+		tick.Stop()
 		fmt.Fprint(rw, messages)
+		return
 	case <-time.After(time.Second * 5):
+		tick.Stop()
 		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
+		return
 	}
+
 }
 
-func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses, done chan bool) {
+func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses) {
 	var lastId uint64
 	messageStore.RLock()
 	messages, found := messageStore.m[key]
@@ -129,7 +135,6 @@ func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses
 		if len(payload.Res) > 0 {
 			payload.LastIndex = lastId
 			result <- payload
-			done <- true
 		}
 	}
 }
@@ -142,7 +147,27 @@ func addMessage(rw http.ResponseWriter, req *http.Request) {
 	messageStore.LastIndex++
 	messageStore.m[sessionCometKey(cookie.Value+currentComet)] = append(messageStore.m[sessionCometKey(cookie.Value+currentComet)], message{messageStore.LastIndex, data, time.Now()})
 	messageStore.Unlock()
+	log.Printf("NumGoroutine %v\n", runtime.NumGoroutine())
 	fmt.Fprintf(rw, "Added a message")
+}
+
+func gc() {
+	for _ = range time.Tick(5 * time.Second) {
+		log.Println("Started gc")
+		start := time.Now()
+		messageStore.Lock()
+		for storeKey, messages := range messageStore.m {
+			var temp []message
+			for key, message := range messages {
+				if message.Stamp.Sub(time.Now()) > 10*time.Second {
+					temp = append(messages[:key], messages[key+1:]...)
+				}
+			}
+			messageStore.m[storeKey] = temp
+		}
+		messageStore.Unlock()
+		log.Printf("Ended gc. It took %v ms\n", time.Now().Sub(start).Nanoseconds()/1000)
+	}
 }
 
 type message struct {
