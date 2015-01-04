@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	_ "expvar"
-	"fmt"
 	"html/template"
 	"log"
 	"math/rand"
@@ -112,10 +111,10 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 	select {
 	case messages := <-chanMessages:
 		done <- true
-		fmt.Fprint(rw, messages)
+		rw.Write(messages.Encode())
 	case <-time.After(time.Second * 5):
 		done <- true
-		fmt.Fprint(rw, Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex})
+		rw.Write(Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex}.Encode())
 	}
 }
 
@@ -128,7 +127,7 @@ func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses
 		var payload Responses
 		for _, msg := range messages {
 			if currentIndex < msg.index {
-				payload.Res = append(payload.Res, Response{"here we are " + msg.Value + " on " + msg.Stamp.Format("Jan 2, 2006 at 3:04pm (EST)"), ""})
+				payload.Res = append(payload.Res, Response{msg.Value, ""})
 			} else {
 				log.Printf("not sending message %+v\n", msg)
 			}
@@ -148,7 +147,7 @@ func addMessage(rw http.ResponseWriter, req *http.Request) {
 	messageStore.LastIndex++
 	messageStore.m[sessionCometKey(cookie.Value+currentComet)] = append(messageStore.m[sessionCometKey(cookie.Value+currentComet)], message{messageStore.LastIndex, data, time.Now()})
 	messageStore.Unlock()
-	fmt.Fprintf(rw, "Added a message")
+	rw.Write([]byte("Added a message"))
 }
 
 func gc() {
@@ -196,18 +195,14 @@ type Responses struct {
 	LastIndex uint64
 }
 
-func (r Responses) String() string {
+func (r Responses) Encode() []byte {
 	b, err := json.Marshal(r)
 	if err != nil {
-		return ""
+		return []byte("")
 	}
-	return string(b)
+	return b
 }
 
 type sessionCometKey string
 
 type session string
-
-//http://127.0.0.1:7070/index
-//http://127.0.0.1:7070/add?data=Diego+was+here+1&cometid=0.89506036657873655482
-//http://127.0.0.1:7070/comet?index=3&cometid=0.89506036657873655482
