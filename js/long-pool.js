@@ -7,8 +7,8 @@
 	    var doCallback = function(resp) {
 	    	if (resp.Res){
 		    	$.each(resp.Res, function(_, item){
-		  			if (item.Value){
-		  				$('.data').html(item.Value);
+		  			if (item.Value && item.Value.js !== ''){
+		  				eval(item.Value.js);
 		  			}
 		  		});	
 	    	}

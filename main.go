@@ -114,7 +114,7 @@ func handleComet(rw http.ResponseWriter, req *http.Request) {
 		rw.Write(messages.Encode())
 	case <-time.After(time.Second * 5):
 		done <- true
-		rw.Write(Responses{[]Response{Response{Value: "", Error: ""}}, currentIndex}.Encode())
+		rw.Write(Responses{[]Response{Response{Value: jsCmd{""}, Error: ""}}, currentIndex}.Encode())
 	}
 }
 
@@ -127,7 +127,7 @@ func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses
 		var payload Responses
 		for _, msg := range messages {
 			if currentIndex < msg.index {
-				payload.Res = append(payload.Res, Response{msg.Value, ""})
+				payload.Res = append(payload.Res, Response{jsCmd{msg.Value.Js}, ""})
 			} else {
 				log.Printf("not sending message %+v\n", msg)
 			}
@@ -141,11 +141,12 @@ func getMessages(key sessionCometKey, currentIndex uint64, result chan Responses
 
 func addMessage(rw http.ResponseWriter, req *http.Request) {
 	data := req.FormValue("data")
+	data = "console.log('" + data + "');"
 	currentComet := req.FormValue("cometid")
 	cookie, _ := req.Cookie("gsessionid")
 	messageStore.Lock()
 	messageStore.LastIndex++
-	messageStore.m[sessionCometKey(cookie.Value+currentComet)] = append(messageStore.m[sessionCometKey(cookie.Value+currentComet)], message{messageStore.LastIndex, data, time.Now()})
+	messageStore.m[sessionCometKey(cookie.Value+currentComet)] = append(messageStore.m[sessionCometKey(cookie.Value+currentComet)], message{messageStore.LastIndex, jsCmd{data}, time.Now()})
 	messageStore.Unlock()
 	rw.Write([]byte("Added a message"))
 }
@@ -158,7 +159,8 @@ func gc() {
 		for storeKey, messages := range messageStore.m {
 			var temp []message
 			for key, message := range messages {
-				if message.Stamp.Sub(time.Now()) > 10*time.Second {
+				//if message.Stamp.Sub(time.Now()) > 20*time.Second {
+				if time.Now().Sub(message.Stamp) > 20*time.Second {
 					temp = append(messages[:key], messages[key+1:]...)
 				}
 			}
@@ -171,7 +173,7 @@ func gc() {
 
 type message struct {
 	index uint64
-	Value string
+	Value jsCmd `json:"value"`
 	Stamp time.Time
 }
 
@@ -186,7 +188,7 @@ type CometInfo struct {
 }
 
 type Response struct {
-	Value string
+	Value jsCmd
 	Error string
 }
 
@@ -206,3 +208,7 @@ func (r Responses) Encode() []byte {
 type sessionCometKey string
 
 type session string
+
+type jsCmd struct {
+	Js string `json:"js"`
+}
